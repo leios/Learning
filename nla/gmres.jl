@@ -65,17 +65,17 @@ Constructor for the ParallelGMRES struct
 # Return
 ParalellGMRES struct
 """
-function ParallelGMRES(Qrhs; m = length(Qrhs[:,1]), n = length(Qrhs[1,:]), subspace_size = m, atol = sqrt(eps(eltype(Qrhs))), rtol = sqrt(eps(eltype(Qrhs))))
+function ParallelGMRES(Qrhs; m = length(Qrhs[:,1]), n = length(Qrhs[1,:]), subspace_size = m, atol = sqrt(eps(eltype(Qrhs))), rtol = sqrt(eps(eltype(Qrhs))), ArrayType = Array)
     k_n = subspace_size
-    residual = zeros(eltype(Qrhs), (k_n, n))
-    b = zeros(eltype(Qrhs), (m, n))
-    x = zeros(eltype(Qrhs), (m, n))
-    sol = zeros(eltype(Qrhs), (m, n))
-    rhs = zeros(eltype(Qrhs), (k_n + 1, n))
-    cs = zeros(eltype(Qrhs), (2 * k_n, n))
-    Q = zeros(eltype(Qrhs), (m, k_n+1 , n))
-    H = zeros(eltype(Qrhs), (k_n+1, k_n, n))
-    R  = zeros(eltype(Qrhs), (k_n+1, k_n, n))
+    residual = ArrayType(zeros(eltype(Qrhs), (k_n, n)))
+    b = ArrayType(zeros(eltype(Qrhs), (m, n)))
+    x = ArrayType(zeros(eltype(Qrhs), (m, n)))
+    sol = ArrayType(zeros(eltype(Qrhs), (m, n)))
+    rhs = ArrayType(zeros(eltype(Qrhs), (k_n + 1, n)))
+    cs = ArrayType(zeros(eltype(Qrhs), (2 * k_n, n)))
+    Q = ArrayType(zeros(eltype(Qrhs), (m, k_n+1 , n)))
+    H = ArrayType(zeros(eltype(Qrhs), (k_n+1, k_n, n)))
+    R  = ArrayType(zeros(eltype(Qrhs), (k_n+1, k_n, n)))
     container = [
         atol,
         rtol,
@@ -114,13 +114,12 @@ It is assumed that the first two krylov vectors are already constructed
 (implicitly) kernel abstractions function closure
 """
 @kernel function initialize_gmres_kernel!(gmres::ParallelGMRES)
-    I = @index(Global)
-    # Now we initialize
     initialize_arnoldi!(gmres, I)
     update_arnoldi!(1, gmres, I)
     initialize_QR!(gmres, I)
     update_QR!(1, gmres, I)
     solve_optimization!(1, gmres, I)
+=#
 end
 
 """
@@ -144,7 +143,7 @@ function initialize_gmres!(gmres::ParallelGMRES; ndrange = gmres.n, cpu_threads 
     if isa(gmres.b, Array)
         kernel! = initialize_gmres_kernel!(CPU(), cpu_threads)
     else
-        kernel! = initialize_gmres_kernel!(GPU(), gpu_threads)
+        kernel! = initialize_gmres_kernel!(CUDA(), gpu_threads)
     end
     event = kernel!(gmres, ndrange = ndrange)
     return event
@@ -360,7 +359,7 @@ function gmres_update!(i, gmres; ndrange = gmres.n, cpu_threads = Threads.nthrea
     if isa(gmres.b, Array)
         kernel! = gmres_update_kernel!(CPU(), cpu_threads)
     else
-        kernel! = gmres_update_kernel!(GPU(), gpu_threads)
+        kernel! = gmres_update_kernel!(CUDA(), gpu_threads)
     end
     event = kernel!(i, gmres, ndrange = ndrange)
     return event
@@ -433,7 +432,7 @@ function construct_solution!(i, gmres; ndrange = size(gmres.x), cpu_threads = Th
     if isa(gmres.b, Array)
         kernel! = construct_solution_kernel!(CPU(), cpu_threads)
     else
-        kernel! = construct_solution_kernel!(GPU(), gpu_threads)
+        kernel! = construct_solution_kernel!(CUDA(), gpu_threads)
     end
     event = kernel!(i, gmres, ndrange = ndrange)
     return event
@@ -469,6 +468,7 @@ function solve!(x, b, linear_operator!, gmres::ParallelGMRES; iterations = gmres
     # Initialize
     event = initialize_gmres!(gmres)
     wait(event)
+#=
     # Now we can actually start on the iterations
     @inbounds for i in 2:iterations
         # TODO: make linear_operator! work with CLIMA
@@ -483,4 +483,5 @@ function solve!(x, b, linear_operator!, gmres::ParallelGMRES; iterations = gmres
     # the following line may not work as expected
     x .= gmres.x
     return nothing
+=#
 end
